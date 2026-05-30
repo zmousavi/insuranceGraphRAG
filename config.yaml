@@ -1,0 +1,78 @@
+# config.yaml
+# ==========
+# Central configuration for all pipeline scripts and retrieval.
+# Change parameters here — no code changes needed.
+
+insurers:
+  - id: "ACME_HOME"
+    name: "Acme Homeowners Insurance Co."
+    policy_types: ["HO-3"]
+  - id: "ACME_AUTO"
+    name: "Acme Personal Auto Insurance Co."
+    policy_types: ["PAP"]
+  - id: "ACME_COMM"
+    name: "Acme Commercial Lines Insurance Co."
+    policy_types: ["CGL"]
+
+embedding:
+  model: "text-embedding-004"
+  dimensions: 768
+  # How many texts to send per Vertex AI API call (max 250 for text-embedding-004).
+  batch_size: 100
+
+summarization:
+  model: "gemini-2.0-flash-exp"
+  # How many tokens of source text to feed the summarizer.
+  # ~2000 tokens covers the first 1-2 pages of a policy section.
+  input_tokens: 2000
+
+chunking:
+  fixed:
+    chunk_tokens: 1000
+    overlap_pct: 0.20
+  structure_aware:
+    # Section header keywords that trigger a new Section node.
+    # Case-insensitive matching. Order matters — checked top-to-bottom.
+    section_headers:
+      - "DECLARATIONS"
+      - "INSURING AGREEMENT"
+      - "COVERAGE"
+      - "EXCLUSIONS"
+      - "CONDITIONS"
+      - "DEFINITIONS"
+      - "ENDORSEMENT"
+      - "SCHEDULE"
+    # Max tokens per shadow chunk within a section.
+    max_chunk_tokens: 1000
+    overlap_pct: 0.20
+    # Sections shorter than this are kept as a single shadow (no sub-chunking).
+    min_section_tokens: 50
+
+similarity:
+  # Cosine threshold for SIMILAR_TO edges between Section nodes.
+  # Too low (< 0.75) → one giant cluster. Too high (> 0.85) → many singletons.
+  threshold: 0.78
+
+retrieval:
+  vector_top_k_global: 20      # seeds for cluster routing pass
+  cluster_top_n: 6             # top clusters selected per query
+  chunks_per_cluster: 6        # anchor shadows kept per cluster (6×6 = 36 anchors)
+  cluster_fetch_cap: 5000      # max shadows fetched per cluster before seed-biased sampling
+  min_results_fallback: 3      # fall back to global search if cluster yields fewer than this
+  cross_encoder_model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+  top_k_after_rerank: 20       # final candidate count sent to LLM
+
+evaluation:
+  groundedness_threshold: 3.0          # minimum acceptable Vertex AI groundedness score
+  faithfulness_warning_threshold: 2.0  # score below which a warning is attached to the answer
+
+redis:
+  ttl_seconds: 3600   # question path cache TTL
+  node_hit_weight: 0.1  # weight of node popularity in cluster ranking score
+
+gcs:
+  # GCS bucket name for full document text storage.
+  # Set GCS_BUCKET env var to override.
+  bucket: "insurance-graph-rag"
+  # Prefix for all document objects.
+  prefix: "documents/"

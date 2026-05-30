@@ -1,0 +1,172 @@
+[
+  {
+    "id": "Q01",
+    "question": "Under a homeowners policy, what is the maximum dollar amount covered for personal property that is stolen or damaged while located away from the insured premises?",
+    "expected_answer": "10% of the dwelling coverage limit (i.e. $35,000 on a $350,000 dwelling limit policy)",
+    "required_sources": [
+      "policy_HO3_001_coverage"
+    ],
+    "traversal_type": "traverse_up",
+    "difficulty": "medium",
+    "note": "Answer is a percentage of dwelling limit; question asks for dollar amount \u2014 vocabulary gap"
+  },
+  {
+    "id": "Q02",
+    "question": "What specific age threshold for plumbing systems is used to determine whether a water damage claim from a burst pipe is excluded under the homeowners policy?",
+    "expected_answer": "20 years (pipes more than 20 years of age are excluded under the original policy)",
+    "required_sources": [
+      "policy_HO3_001_exclusions"
+    ],
+    "traversal_type": "traverse_up",
+    "difficulty": "easy",
+    "note": "Direct factual retrieval from Exclusions section"
+  },
+  {
+    "id": "Q03",
+    "question": "Under the personal auto policy, what is the maximum medical payment benefit available per person injured in a covered accident, regardless of fault?",
+    "expected_answer": "$5,000 per person",
+    "required_sources": [
+      "policy_PAP_001_coverage"
+    ],
+    "traversal_type": "traverse_up",
+    "difficulty": "easy"
+  },
+  {
+    "id": "Q04",
+    "question": "Under the commercial general liability policy, what is the per-occurrence limit and what is the general aggregate limit?",
+    "expected_answer": "$1,000,000 per occurrence; $2,000,000 aggregate",
+    "required_sources": [
+      "policy_CGL_001_declarations"
+    ],
+    "traversal_type": "traverse_up",
+    "difficulty": "easy"
+  },
+  {
+    "id": "Q05",
+    "question": "Under the homeowners policy, which specific type of water event is explicitly excluded from coverage unless a separate endorsement is purchased?",
+    "expected_answer": "Water backup through sewers or drains and sump pump overflow",
+    "required_sources": [
+      "policy_HO3_001_exclusions",
+      "endorsement_HO3_001_E01"
+    ],
+    "traversal_type": "traverse_similar",
+    "difficulty": "medium",
+    "note": "Requires finding both exclusion and endorsement"
+  },
+  {
+    "id": "Q06",
+    "question": "A homeowner filed a water damage claim after a pipe burst. The adjuster denied the claim citing the age of the plumbing. What was the specific age of the pipe found during inspection, and which policy exclusion was cited as the basis for denial?",
+    "expected_answer": "The pipe was 23 years old. The policy excludes pipes more than 20 years of age.",
+    "required_sources": [
+      "claim_HO_002_adjuster",
+      "policy_HO3_001_exclusions"
+    ],
+    "traversal_type": "traverse_policy",
+    "difficulty": "hard",
+    "note": "Requires crossing from claim adjuster notes to policy exclusions section"
+  },
+  {
+    "id": "Q07",
+    "question": "A bakery received a claim from multiple customers who became ill after eating its products. Was this type of claim covered, and if so, under what specific provision?",
+    "expected_answer": "Yes, covered under the Food Contamination Extension endorsement (endorsement_CGL_001_E02) up to $50,000.",
+    "required_sources": [
+      "claim_CGL_004_adjuster",
+      "endorsement_CGL_001_E02"
+    ],
+    "traversal_type": "traverse_policy",
+    "difficulty": "hard",
+    "note": "Answer requires finding the endorsement, not the base policy"
+  },
+  {
+    "id": "Q08",
+    "question": "A ride-share driver filed a claim for a collision that occurred while they had a passenger in the vehicle. Was this loss covered under their auto policy?",
+    "expected_answer": "No. The ride-share endorsement (E01) only covers Period 1 (app on, no passenger). Coverage during Period 2 and 3 (passenger in vehicle) is explicitly excluded.",
+    "required_sources": [
+      "claim_PAP_002_adjuster",
+      "endorsement_PAP_001_E01"
+    ],
+    "traversal_type": "traverse_policy",
+    "difficulty": "hard",
+    "note": "Requires endorsement text to understand Period 1 vs Period 2/3 distinction"
+  },
+  {
+    "id": "Q09",
+    "question": "An injured visitor filed a claim against a commercial bakery after slipping on the premises. Was the building's landlord also protected under the bakery's insurance policy?",
+    "expected_answer": "Yes. The Additional Insured endorsement (E01) covers the landlord (Springfield Properties LLC) for claims arising from the named insured's operations at the leased premises.",
+    "required_sources": [
+      "claim_CGL_006_adjuster",
+      "endorsement_CGL_001_E01"
+    ],
+    "traversal_type": "traverse_policy",
+    "difficulty": "hard"
+  },
+  {
+    "id": "Q10",
+    "question": "A vehicle owner filed a total loss claim eighteen months after purchasing a new vehicle. What was the basis for the settlement amount, and why was it different from the standard calculation?",
+    "expected_answer": "Settled at new vehicle replacement cost (same make and model) rather than actual cash value, because the New Car Replacement endorsement applies within 24 months of original purchase.",
+    "required_sources": [
+      "claim_PAP_006_adjuster",
+      "endorsement_PAP_001_E02"
+    ],
+    "traversal_type": "traverse_policy",
+    "difficulty": "hard"
+  },
+  {
+    "id": "Q11",
+    "question": "A homeowner had a water damage claim denied in 2023. They filed a second claim for a similar pipe-related loss in 2024. What changed between the two claims that affected the coverage outcome?",
+    "expected_answer": "The policy was amended in 2024, raising the pipe age exclusion from 20 years to 25 years. The second claim was for a 22-year-old pipe, which was excluded under the original policy but covered under the amended policy.",
+    "required_sources": [
+      "claim_HO_002_outcome",
+      "claim_HO_010_adjuster",
+      "policy_HO3_001_v2_exclusions"
+    ],
+    "traversal_type": "traverse_temporal",
+    "difficulty": "hard",
+    "note": "Requires temporal traversal across two claims AND policy version comparison"
+  },
+  {
+    "id": "Q12",
+    "question": "A policyholder had their auto claim for a theft approved. Shortly after, they filed a separate claim for hail damage. What were the deductibles that applied to each claim?",
+    "expected_answer": "Theft claim: $500 comprehensive deductible. Hail damage claim: $500 comprehensive deductible. Both fall under comprehensive coverage.",
+    "required_sources": [
+      "claim_PAP_004_outcome",
+      "claim_PAP_009_adjuster"
+    ],
+    "traversal_type": "traverse_temporal",
+    "difficulty": "medium"
+  },
+  {
+    "id": "Q13",
+    "question": "A commercial bakery filed a bodily injury claim for a customer who slipped on premises, followed by a property damage claim for smoke damage to a neighboring tenant. What was the combined exposure against the policy aggregate?",
+    "expected_answer": "Bodily injury claim (claim_CGL_001): within $1M per occurrence limit. Property damage claim (claim_CGL_007): within $1M per occurrence limit. Combined exposure $2M, which equals the aggregate limit.",
+    "required_sources": [
+      "claim_CGL_001_outcome",
+      "claim_CGL_007_outcome"
+    ],
+    "traversal_type": "traverse_temporal",
+    "difficulty": "hard"
+  },
+  {
+    "id": "Q14",
+    "question": "Under the current version of the homeowners policy (effective January 2024), what is the pipe age threshold that triggers the water damage exclusion?",
+    "expected_answer": "25 years. The amended policy (effective 2024-01-01) raised the threshold from 20 years to 25 years.",
+    "required_sources": [
+      "policy_HO3_001_v2_exclusions"
+    ],
+    "traversal_type": "supersedes",
+    "difficulty": "medium",
+    "note": "Must retrieve amended policy, not original \u2014 tests SUPERSEDES + superseded=true filter"
+  },
+  {
+    "id": "Q15",
+    "question": "A claim was denied in early 2023 because the damaged pipe was 22 years old. If the same loss had occurred under the policy terms in effect from January 2024 onward, would the outcome have been different?",
+    "expected_answer": "Yes. The original policy excluded pipes over 20 years, so the 22-year-old pipe was denied. The amended policy (effective 2024-01-01) raised the threshold to 25 years, so the same 22-year-old pipe would be covered.",
+    "required_sources": [
+      "policy_HO3_001_exclusions",
+      "policy_HO3_001_v2_exclusions"
+    ],
+    "traversal_type": "supersedes",
+    "difficulty": "hard",
+    "note": "Requires comparing original and amended policy \u2014 most complex question"
+  }
+]

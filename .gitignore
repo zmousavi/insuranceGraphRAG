@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+venv/
+manifest/embeddings_*.parquet
+manifest/registry.json
+demo_docs/
+results/
+.DS_Store
+PLAN.md
+Insurance-Graph-RAG-Architecture.md
