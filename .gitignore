@@ -5,6 +5,7 @@ venv/
 manifest/embeddings_*.parquet
 manifest/registry.json
 demo_docs/
+mainfest/
 results/
 .DS_Store
 PLAN.md
