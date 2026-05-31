@@ -2,10 +2,8 @@ __pycache__/
 *.pyc
 .env
 venv/
-manifest/embeddings_*.parquet
-manifest/registry.json
 demo_docs/
-mainfest/
+manifest/
 results/
 .DS_Store
 PLAN.md
