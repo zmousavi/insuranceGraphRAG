@@ -326,7 +326,14 @@ def process_document(file_path: Path, strategy: str) -> dict:
         source files.
     """
     text = file_path.read_text()
-    doc_id = file_path.stem  # filename without extension, e.g. "policy_HO3_001"
+    # For files in claim subfolders (e.g. claims/claim_CGL_001/adjuster.txt),
+    # include the parent folder name so doc_id is unique: "claim_CGL_001_adjuster".
+    # For policies and endorsements the filename stem is already unique.
+    parent = file_path.parent.name
+    if parent not in ("policies", "endorsements", "claims"):
+        doc_id = f"{parent}_{file_path.stem}"
+    else:
+        doc_id = file_path.stem
 
     if strategy == "structure_aware":
         sections = split_into_sections(text, doc_id)
@@ -378,9 +385,23 @@ def main():
     manifest = []
     skipped = 0
     processed = 0
+    seen_doc_ids: dict[str, Path] = {}
 
     for file_path in doc_files:
-        doc_id = file_path.stem
+        parent = file_path.parent.name
+        if parent not in ("policies", "endorsements", "claims"):
+            doc_id = f"{parent}_{file_path.stem}"
+        else:
+            doc_id = file_path.stem
+
+        if doc_id in seen_doc_ids:
+            raise ValueError(
+                f"doc_id collision: '{doc_id}' is produced by both "
+                f"'{seen_doc_ids[doc_id]}' and '{file_path}'. "
+                f"Rename one of the source files."
+            )
+        seen_doc_ids[doc_id] = file_path
+
         current_hash = file_hash(file_path)
 
         # Skip if file is unchanged since last run.
