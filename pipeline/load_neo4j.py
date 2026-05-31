@@ -385,11 +385,14 @@ def main():
     print("Loading policies...")
     load_policies(driver, manifest)
 
-    print("Loading sections and shadows...")
-    load_sections_and_shadows(driver, manifest)
-
     print("Loading claims...")
     load_claims(driver, manifest)
+
+    # Claims must load before sections — load_sections_and_shadows matches parent
+    # nodes by id, so ClaimDocument nodes must exist before HAS_SECTION edges
+    # can be created for claim documents.
+    print("Loading sections and shadows...")
+    load_sections_and_shadows(driver, manifest)
 
     print("Loading endorsements...")
     load_endorsements(driver, manifest)
