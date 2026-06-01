@@ -34,6 +34,7 @@ load_dotenv()
 
 MANIFEST_FILE  = Path(__file__).parent.parent / "manifest" / "manifest.json"
 ENTITIES_FILE  = Path(__file__).parent.parent / "manifest" / "entities.json"
+CLUSTERS_FILE  = Path(__file__).parent.parent / "manifest" / "clusters.json"
 
 
 # ---------------------------------------------------------------------------
@@ -580,6 +581,36 @@ def load_supersedes(driver):
 
 
 # ---------------------------------------------------------------------------
+# Cluster loader
+# ---------------------------------------------------------------------------
+
+def load_clusters(driver):
+    """
+    Read clusters.json and write cluster_id onto every node in Neo4j.
+
+    Why a generic MATCH (n {id: item.id})?
+        cluster.py assigns IDs for all node types (policies, claims, entities)
+        in one flat dict. A single Cypher clause matches any label — no need
+        to repeat the UNWIND for each label.
+    """
+    if not CLUSTERS_FILE.exists():
+        print("  clusters.json not found — skipping (run cluster.py first)")
+        return
+
+    clusters = json.loads(CLUSTERS_FILE.read_text())
+    batch = [{"id": node_id, "cluster_id": cid} for node_id, cid in clusters.items()]
+
+    with driver.session() as session:
+        session.run("""
+            UNWIND $batch AS item
+            MATCH (n {id: item.id})
+            SET n.cluster_id = item.cluster_id
+        """, batch=batch)
+
+    print(f"  cluster_id written to {len(batch)} nodes.")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -627,8 +658,11 @@ def main():
     print("Creating SUPERSEDES edge...")
     load_supersedes(driver)
 
+    print("Loading cluster IDs...")
+    load_clusters(driver)
+
     driver.close()
-    print("\nDone. Next: python pipeline/extract_keywords.py")
+    print("\nDone. Next: python retrieval/retrieve.py")
 
 
 if __name__ == "__main__":
