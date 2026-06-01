@@ -32,7 +32,8 @@ from neo4j import GraphDatabase
 
 load_dotenv()
 
-MANIFEST_FILE = Path(__file__).parent.parent / "manifest" / "manifest.json"
+MANIFEST_FILE  = Path(__file__).parent.parent / "manifest" / "manifest.json"
+ENTITIES_FILE  = Path(__file__).parent.parent / "manifest" / "entities.json"
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +83,9 @@ def create_schema(driver):
     """
     with driver.session() as session:
         for label in ["Policyholder", "Policy", "Endorsement", "Claim",
-                      "ClaimDocument", "Section", "Shadow", "Keyword"]:
+                      "ClaimDocument", "Section", "Shadow", "Keyword",
+                      "Person", "Organization", "Agent", "Location",
+                      "Contractor", "ThirdParty"]:
             session.run(f"""
                 CREATE CONSTRAINT IF NOT EXISTS FOR (n:{label})
                 REQUIRE n.id IS UNIQUE
@@ -119,7 +122,7 @@ def load_policies(driver, manifest):
         Updates properties if the node already exists — handles re-runs
         after a summary or source_file has been updated.
     """
-    policies = [d for d in manifest if d["doc_id"].startswith("policy_")]
+    policies = [d for d in manifest if d.get("doc_type") == "policy"]
 
     with driver.session() as session:
         session.run("""
@@ -205,25 +208,22 @@ def load_claims(driver, manifest):
         reference lives at this level so the agent can traverse directly from
         a retrieved chunk back to the governing policy.
 
-    Why derive policy_id from naming convention?
-        The manifest doesn't store policy_id explicitly. The doc_id naming
-        convention (claim_HO_001, claim_PAP_002) encodes the policy type,
-        which we map to the full policy_id.
+    policy_id and claim_id come from the manifest (set by ingest.py).
+    We propagate policy_id within a claim group so adjuster notes — which
+    don't have a Policy Number header — still get REFERENCES_POLICY edges.
     """
-    claim_docs = [d for d in manifest if d["doc_id"].startswith("claim_")]
+    claim_docs = [d for d in manifest if d.get("doc_type") == "claim_document"]
 
-    policy_map = {
-        "HO": "policy_HO3_001",
-        "PAP": "policy_PAP_001",
-        "CGL": "policy_CGL_001",
-    }
+    # Build claim_id → policy_id from docs that have it (fnol + outcome).
+    claim_policy_map: dict[str, str] = {}
+    for doc in claim_docs:
+        if doc.get("policy_id") and doc.get("claim_id"):
+            claim_policy_map[doc["claim_id"]] = doc["policy_id"]
 
     batch = []
     for doc in claim_docs:
-        parts = doc["doc_id"].split("_")
-        policy_type = parts[1]
-        claim_id = f"claim_{parts[1]}_{parts[2]}"
-        policy_id = policy_map.get(policy_type, "")
+        claim_id = doc.get("claim_id", "")
+        policy_id = doc.get("policy_id") or claim_policy_map.get(claim_id, "")
 
         batch.append({
             "id": doc["doc_id"],
@@ -265,7 +265,7 @@ def load_endorsements(driver, manifest):
         endorsement_PAP_001_E01 → policy_PAP_001
         endorsement_CGL_001_E01 → policy_CGL_001
     """
-    endorsements = [d for d in manifest if d["doc_id"].startswith("endorsement_")]
+    endorsements = [d for d in manifest if d.get("doc_type") == "endorsement"]
 
     batch = []
     for doc in endorsements:
@@ -293,6 +293,170 @@ def load_endorsements(driver, manifest):
 
 
 # ---------------------------------------------------------------------------
+# Entity loaders  (reads manifest/entities.json produced by extract_entities.py)
+# ---------------------------------------------------------------------------
+
+def load_entities(driver, entities: dict):
+    """
+    Create Person, Organization, Agent, Location, Contractor, and ThirdParty
+    nodes from the deduplicated entities extracted by extract_entities.py.
+
+    Why separate from policy/claim loading?
+        Entity extraction requires a Gemini call per document and produces a
+        separate JSON file. Loading them in their own step keeps this file
+        idempotent and easy to re-run after entity extraction is updated.
+
+    Why MERGE and not CREATE?
+        The same person or agent can appear across multiple policies
+        (e.g. James Carter owns three businesses). MERGE ensures we get one
+        node per entity regardless of how many policies reference them.
+    """
+    with driver.session() as session:
+        session.run("""
+            UNWIND $persons AS p
+            MERGE (n:Person {id: p.id})
+            SET n.name = p.name
+        """, persons=entities.get("persons", []))
+
+        session.run("""
+            UNWIND $orgs AS o
+            MERGE (n:Organization {id: o.id})
+            SET n.name = o.name
+        """, orgs=entities.get("organizations", []))
+
+        session.run("""
+            UNWIND $agents AS a
+            MERGE (n:Agent {id: a.id})
+            SET n.name = a.name, n.agency = a.agency
+        """, agents=entities.get("agents", []))
+
+        session.run("""
+            UNWIND $locs AS l
+            MERGE (n:Location {id: l.id})
+            SET n.address = l.address
+        """, locs=entities.get("locations", []))
+
+        session.run("""
+            UNWIND $contractors AS c
+            MERGE (n:Contractor {id: c.id})
+            SET n.name = c.name
+        """, contractors=entities.get("contractors", []))
+
+        session.run("""
+            UNWIND $tps AS t
+            MERGE (n:ThirdParty {id: t.id})
+            SET n.name = t.name
+        """, tps=entities.get("third_parties", []))
+
+    counts = {k: len(v) for k, v in entities.items() if isinstance(v, list)}
+    print(f"  Persons: {counts.get('persons',0)}  Orgs: {counts.get('organizations',0)}  "
+          f"Agents: {counts.get('agents',0)}  Locations: {counts.get('locations',0)}  "
+          f"Contractors: {counts.get('contractors',0)}  ThirdParties: {counts.get('third_parties',0)}")
+
+
+def load_entity_edges(driver, entities: dict):
+    """
+    Create edges connecting entity nodes to Policy and Claim nodes.
+
+    Edge types created here:
+      Person/Org  -[:INSURED_UNDER]->  Policy      (named insured)
+      Person      -[:OWNS]->           Organization (business owner link)
+      Policy      -[:MANAGED_BY]->     Agent
+      Policy      -[:LOCATED_AT]->     Location
+      Claim       -[:REPAIRED_BY]->    Contractor
+      Claim       -[:INVOLVES_THIRD_PARTY]->  ThirdParty  (role=claimant)
+      Claim       -[:HAS_SUBROGATION_RIGHT]-> ThirdParty  (role=subrogation_target)
+
+    Why INSURED_UNDER on the entity → Policy rather than Policy → entity?
+        The traversal direction matters for Cypher: "find all policies for
+        James Carter" reads naturally as MATCH (p:Person)-[:INSURED_UNDER]->(pol)
+        rather than a reverse MATCH. Both directions work in Neo4j but
+        entity-to-policy feels more natural for portfolio queries.
+
+    Why owner via OWNS edge instead of adding owner_id to the policy link?
+        An OWNS edge lets us traverse: Person → Organization → Policy with
+        a simple 2-hop path. Storing owner_id as a property would require
+        property filtering and can't be followed by a relationship traversal.
+    """
+    policy_links = entities.get("policy_links", [])
+    claim_links  = entities.get("claim_links", [])
+
+    with driver.session() as session:
+        # Named insured → Policy
+        person_links = [lk for lk in policy_links if lk.get("insured_type") != "organization" and lk.get("insured_id")]
+        session.run("""
+            UNWIND $links AS lk
+            MATCH (person:Person {id: lk.insured_id})
+            MATCH (pol:Policy    {id: lk.policy_id})
+            MERGE (person)-[:INSURED_UNDER]->(pol)
+        """, links=person_links)
+
+        org_links = [lk for lk in policy_links if lk.get("insured_type") == "organization" and lk.get("insured_id")]
+        session.run("""
+            UNWIND $links AS lk
+            MATCH (org:Organization {id: lk.insured_id})
+            MATCH (pol:Policy       {id: lk.policy_id})
+            MERGE (org)-[:INSURED_UNDER]->(pol)
+        """, links=org_links)
+
+        # Business owner → Organization
+        owner_links = [lk for lk in policy_links if lk.get("owner_id") and lk.get("insured_id") and lk.get("insured_type") == "organization"]
+        session.run("""
+            UNWIND $links AS lk
+            MATCH (owner:Person       {id: lk.owner_id})
+            MATCH (org:Organization   {id: lk.insured_id})
+            MERGE (owner)-[:OWNS]->(org)
+        """, links=owner_links)
+
+        # Policy → Agent
+        agent_links = [lk for lk in policy_links if lk.get("agent_id")]
+        session.run("""
+            UNWIND $links AS lk
+            MATCH (pol:Policy {id: lk.policy_id})
+            MATCH (agent:Agent {id: lk.agent_id})
+            MERGE (pol)-[:MANAGED_BY]->(agent)
+        """, links=agent_links)
+
+        # Policy → Location
+        loc_links = [lk for lk in policy_links if lk.get("location_id")]
+        session.run("""
+            UNWIND $links AS lk
+            MATCH (pol:Policy    {id: lk.policy_id})
+            MATCH (loc:Location  {id: lk.location_id})
+            MERGE (pol)-[:LOCATED_AT]->(loc)
+        """, links=loc_links)
+
+        # Claim → Contractor (REPAIRED_BY)
+        repair_links = [lk for lk in claim_links if lk.get("link_type") == "repaired_by"]
+        session.run("""
+            UNWIND $links AS lk
+            MATCH (claim:Claim       {id: lk.claim_id})
+            MATCH (con:Contractor    {id: lk.entity_id})
+            MERGE (claim)-[:REPAIRED_BY]->(con)
+        """, links=repair_links)
+
+        # Claim → ThirdParty (claimant)
+        claimant_links = [lk for lk in claim_links if lk.get("link_type") == "claimant"]
+        session.run("""
+            UNWIND $links AS lk
+            MATCH (claim:Claim      {id: lk.claim_id})
+            MATCH (tp:ThirdParty    {id: lk.entity_id})
+            MERGE (claim)-[:INVOLVES_THIRD_PARTY]->(tp)
+        """, links=claimant_links)
+
+        # Claim → ThirdParty (subrogation target)
+        subrogation_links = [lk for lk in claim_links if lk.get("link_type") == "subrogation_target"]
+        session.run("""
+            UNWIND $links AS lk
+            MATCH (claim:Claim   {id: lk.claim_id})
+            MATCH (tp:ThirdParty {id: lk.entity_id})
+            MERGE (claim)-[:HAS_SUBROGATION_RIGHT]->(tp)
+        """, links=subrogation_links)
+
+    print(f"  Policy links: {len(policy_links)}  Claim links: {len(claim_links)}")
+
+
+# ---------------------------------------------------------------------------
 # Edge loaders
 # ---------------------------------------------------------------------------
 
@@ -313,7 +477,7 @@ def load_next_chunk_edges(driver, manifest):
         correct sequential linking regardless of manifest ordering.
 
     Note: this is NOT a temporal edge. NEXT_CHUNK is text continuity
-    within a document. NEXT_PERIOD (built in load_temporal.py) is
+    within a document. NEXT_PERIOD (built in load_next_period_edges) is
     chronological order across separate claim filings over time.
     """
     edges = []
@@ -342,6 +506,65 @@ def load_next_chunk_edges(driver, manifest):
         """, edges=edges)
 
     print(f"  Created {len(edges)} NEXT_CHUNK edges.")
+
+
+def load_next_period_edges(driver, manifest):
+    """
+    Create NEXT_PERIOD edges between consecutive FNOL ClaimDocuments for the
+    same policy, ordered by date_of_loss.
+
+    Why FNOL docs and not all claim docs?
+        Only FNOL docs carry date_of_loss. Using one representative doc per
+        claim (the FNOL) keeps the chain simple: one node per claim in the
+        temporal sequence.
+
+    Why group by policy_id and not claim_id?
+        NEXT_PERIOD is a cross-claim edge — it chains separate claims filed
+        against the same policy over time. Grouping by claim_id would only
+        look within a single claim (one FNOL = no pairs).
+    """
+    from collections import defaultdict
+    from dateutil import parser as dateparser
+
+    # Use only FNOL docs — they carry date_of_loss and represent each claim.
+    policy_groups: dict[str, list[dict]] = defaultdict(list)
+    for doc in manifest:
+        if doc.get("doc_type") != "claim_document":
+            continue
+        if not doc["doc_id"].endswith("_fnol"):
+            continue
+        policy_id = doc.get("policy_id")
+        date_str = doc.get("date_of_loss")
+        if not policy_id or not date_str:
+            continue
+        try:
+            doc["_parsed_date"] = dateparser.parse(date_str)
+            policy_groups[policy_id].append(doc)
+        except Exception:
+            continue
+
+    edges = []
+    for policy_id, docs in policy_groups.items():
+        sorted_docs = sorted(docs, key=lambda d: d["_parsed_date"])
+        for i in range(len(sorted_docs) - 1):
+            edges.append({
+                "from_id": sorted_docs[i]["doc_id"],
+                "to_id": sorted_docs[i + 1]["doc_id"],
+            })
+
+    if not edges:
+        print("  No NEXT_PERIOD edges to create (no docs with date_of_loss).")
+        return
+
+    with driver.session() as session:
+        session.run("""
+            UNWIND $edges AS e
+            MATCH (a:ClaimDocument {id: e.from_id})
+            MATCH (b:ClaimDocument {id: e.to_id})
+            MERGE (a)-[:NEXT_PERIOD]->(b)
+        """, edges=edges)
+
+    print(f"  Created {len(edges)} NEXT_PERIOD edges.")
 
 
 def load_supersedes(driver):
@@ -397,8 +620,20 @@ def main():
     print("Loading endorsements...")
     load_endorsements(driver, manifest)
 
+    if ENTITIES_FILE.exists():
+        entities = json.loads(ENTITIES_FILE.read_text())
+        print("Loading entity nodes...")
+        load_entities(driver, entities)
+        print("Loading entity edges...")
+        load_entity_edges(driver, entities)
+    else:
+        print("  entities.json not found — skipping entity load (run extract_entities.py first)")
+
     print("Loading NEXT_CHUNK edges...")
     load_next_chunk_edges(driver, manifest)
+
+    print("Loading NEXT_PERIOD edges...")
+    load_next_period_edges(driver, manifest)
 
     print("Creating SUPERSEDES edge...")
     load_supersedes(driver)

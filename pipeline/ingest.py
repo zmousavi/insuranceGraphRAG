@@ -67,7 +67,7 @@ SECTION_HEADERS = {
 
 # Shadow chunk size in words. 1000 words ≈ 1300 tokens — well within the
 # Neo4j 4KB storage target and the embedding model's input limit.
-SHADOW_MAX_TOKENS = 1000
+SHADOW_MAX_TOKENS = 500
 
 # 20% overlap means 200 words repeat between consecutive chunks so that
 # sentences near a boundary are not severed and lost to retrieval.
@@ -198,10 +198,14 @@ def create_shadows(section: dict) -> list[dict]:
             "token_count": len(words),
         }]
 
+    overlap = SHADOW_MAX_TOKENS - step  # words already in previous chunk's tail
     shadows = []
     for i, start in enumerate(range(0, len(words), step)):
         chunk_words = words[start:start + SHADOW_MAX_TOKENS]
         if not chunk_words:
+            break
+        # Skip tail chunks that are fully covered by the previous chunk's overlap.
+        if i > 0 and len(chunk_words) <= overlap:
             break
         shadows.append({
             "shadow_id": f"{section['section_id']}_s{i}",
@@ -345,14 +349,43 @@ def process_document(file_path: Path, strategy: str) -> dict:
         sections = []
         shadows = create_fixed_chunks(text, doc_id)
 
-    return {
+    # Determine document type from doc_id prefix.
+    if doc_id.startswith("policy_"):
+        doc_type = "policy"
+    elif doc_id.startswith("endorsement_"):
+        doc_type = "endorsement"
+    else:
+        doc_type = "claim_document"
+
+    entry = {
         "doc_id": doc_id,
+        "doc_type": doc_type,
         "source_file": str(file_path),
         "strategy": strategy,
         "hash": file_hash(file_path),
         "sections": sections,
         "shadows": shadows,
     }
+
+    if doc_type == "claim_document":
+        # Derive claim_id: "claim_CGL_001_fnol" → "claim_CGL_001"
+        parts = doc_id.split("_")
+        entry["claim_id"] = f"{parts[0]}_{parts[1]}_{parts[2]}"
+
+        # Extract policy_id — every claim doc header has "Policy Number: policy_XYZ".
+        # Adjuster notes don't have this field so we also check the sibling fnol/outcome
+        # via the claim folder. For now extract where available; load_neo4j propagates
+        # policy_id across all docs in the same claim using claim_id.
+        policy_id_match = re.search(r"Policy Number:\s*(policy_\S+)", text)
+        if policy_id_match:
+            entry["policy_id"] = policy_id_match.group(1)
+
+        # Extract date_of_loss for NEXT_PERIOD edge creation in load_temporal.py.
+        date_match = re.search(r"Date of Loss:\s*(.+)", text)
+        if date_match:
+            entry["date_of_loss"] = date_match.group(1).strip()
+
+    return entry
 
 
 # ---------------------------------------------------------------------------

@@ -1,172 +1,215 @@
 [
   {
     "id": "Q01",
-    "question": "Under a homeowners policy, what is the maximum dollar amount covered for personal property that is stolen or damaged while located away from the insured premises?",
-    "expected_answer": "10% of the dwelling coverage limit (i.e. $35,000 on a $350,000 dwelling limit policy)",
-    "required_sources": [
-      "policy_HO3_001_coverage"
-    ],
+    "question": "Under Sarah Mitchell's homeowners policy (policy_HO3_001), what is the maximum dollar amount covered for personal property stolen or damaged while located away from the insured premises?",
+    "expected_answer": "10% of the dwelling coverage limit ($35,000 on a $350,000 dwelling limit policy)",
+    "required_sources": ["policy_HO3_001_coverage"],
     "traversal_type": "traverse_up",
     "difficulty": "medium",
-    "note": "Answer is a percentage of dwelling limit; question asks for dollar amount \u2014 vocabulary gap"
+    "note": "Answer is a percentage of dwelling limit; question asks for dollar amount — vocabulary gap"
   },
   {
     "id": "Q02",
-    "question": "What specific age threshold for plumbing systems is used to determine whether a water damage claim from a burst pipe is excluded under the homeowners policy?",
+    "question": "What specific pipe age threshold determines whether a water damage claim is excluded under Sarah Mitchell's homeowners policy (policy_HO3_001)?",
     "expected_answer": "20 years (pipes more than 20 years of age are excluded under the original policy)",
-    "required_sources": [
-      "policy_HO3_001_exclusions"
-    ],
+    "required_sources": ["policy_HO3_001_exclusions"],
     "traversal_type": "traverse_up",
-    "difficulty": "easy",
-    "note": "Direct factual retrieval from Exclusions section"
+    "difficulty": "easy"
   },
   {
     "id": "Q03",
-    "question": "Under the personal auto policy, what is the maximum medical payment benefit available per person injured in a covered accident, regardless of fault?",
+    "question": "Under David Chen's personal auto policy (policy_PAP_001), what is the maximum medical payment benefit per person injured in a covered accident, regardless of fault?",
     "expected_answer": "$5,000 per person",
-    "required_sources": [
-      "policy_PAP_001_coverage"
-    ],
+    "required_sources": ["policy_PAP_001_coverage"],
     "traversal_type": "traverse_up",
     "difficulty": "easy"
   },
   {
     "id": "Q04",
-    "question": "Under the commercial general liability policy, what is the per-occurrence limit and what is the general aggregate limit?",
+    "question": "Under the Golden Slice LLC commercial general liability policy (policy_CGL_001), what is the per-occurrence limit and the general aggregate limit?",
     "expected_answer": "$1,000,000 per occurrence; $2,000,000 aggregate",
-    "required_sources": [
-      "policy_CGL_001_declarations"
-    ],
+    "required_sources": ["policy_CGL_001_declarations"],
     "traversal_type": "traverse_up",
     "difficulty": "easy"
   },
   {
     "id": "Q05",
-    "question": "Under the homeowners policy, which specific type of water event is explicitly excluded from coverage unless a separate endorsement is purchased?",
-    "expected_answer": "Water backup through sewers or drains and sump pump overflow",
-    "required_sources": [
-      "policy_HO3_001_exclusions",
-      "endorsement_HO3_001_E01"
-    ],
+    "question": "Under Sarah Mitchell's homeowners policy (policy_HO3_001), which specific water event is excluded from standard coverage, and what endorsement provides that coverage?",
+    "expected_answer": "Water backup through sewers or drains and sump pump overflow is excluded. Endorsement E01 (Water Backup and Sump Pump Overflow) adds up to $10,000 of coverage.",
+    "required_sources": ["policy_HO3_001_exclusions", "endorsement_HO3_001_E01"],
     "traversal_type": "traverse_similar",
     "difficulty": "medium",
     "note": "Requires finding both exclusion and endorsement"
   },
   {
     "id": "Q06",
-    "question": "A homeowner filed a water damage claim after a pipe burst. The adjuster denied the claim citing the age of the plumbing. What was the specific age of the pipe found during inspection, and which policy exclusion was cited as the basis for denial?",
+    "question": "Sarah Mitchell's water damage claim (claim_HO_002) was denied by the adjuster. What was the specific age of the damaged pipe and which policy exclusion was cited?",
     "expected_answer": "The pipe was 23 years old. The policy excludes pipes more than 20 years of age.",
-    "required_sources": [
-      "claim_HO_002_adjuster",
-      "policy_HO3_001_exclusions"
-    ],
+    "required_sources": ["claim_HO_002_adjuster", "policy_HO3_001_exclusions"],
     "traversal_type": "traverse_policy",
     "difficulty": "hard",
     "note": "Requires crossing from claim adjuster notes to policy exclusions section"
   },
   {
     "id": "Q07",
-    "question": "A bakery received a claim from multiple customers who became ill after eating its products. Was this type of claim covered, and if so, under what specific provision?",
+    "question": "Golden Slice LLC received a food poisoning claim (claim_CGL_004) after multiple customers became ill. Was this covered, and if so under what specific provision?",
     "expected_answer": "Yes, covered under the Food Contamination Extension endorsement (endorsement_CGL_001_E02) up to $50,000.",
-    "required_sources": [
-      "claim_CGL_004_adjuster",
-      "endorsement_CGL_001_E02"
-    ],
+    "required_sources": ["claim_CGL_004_adjuster", "endorsement_CGL_001_E02"],
     "traversal_type": "traverse_policy",
-    "difficulty": "hard",
-    "note": "Answer requires finding the endorsement, not the base policy"
+    "difficulty": "hard"
   },
   {
     "id": "Q08",
-    "question": "A ride-share driver filed a claim for a collision that occurred while they had a passenger in the vehicle. Was this loss covered under their auto policy?",
-    "expected_answer": "No. The ride-share endorsement (E01) only covers Period 1 (app on, no passenger). Coverage during Period 2 and 3 (passenger in vehicle) is explicitly excluded.",
-    "required_sources": [
-      "claim_PAP_002_adjuster",
-      "endorsement_PAP_001_E01"
-    ],
+    "question": "David Chen filed a collision claim (claim_PAP_002) that occurred while he had a passenger in his vehicle during a ride-share trip. Was this loss covered under his policy?",
+    "expected_answer": "No. The ride-share endorsement (E01) only covers Period 1 (app on, no passenger). Coverage during Period 2 and 3 is explicitly excluded.",
+    "required_sources": ["claim_PAP_002_adjuster", "endorsement_PAP_001_E01"],
     "traversal_type": "traverse_policy",
-    "difficulty": "hard",
-    "note": "Requires endorsement text to understand Period 1 vs Period 2/3 distinction"
+    "difficulty": "hard"
   },
   {
     "id": "Q09",
-    "question": "An injured visitor filed a claim against a commercial bakery after slipping on the premises. Was the building's landlord also protected under the bakery's insurance policy?",
-    "expected_answer": "Yes. The Additional Insured endorsement (E01) covers the landlord (Springfield Properties LLC) for claims arising from the named insured's operations at the leased premises.",
-    "required_sources": [
-      "claim_CGL_006_adjuster",
-      "endorsement_CGL_001_E01"
-    ],
+    "question": "A customer slipped and filed a claim against Golden Slice LLC (claim_CGL_006). Was the building owner Maple Street Holdings LLC also protected under Golden Slice's insurance policy?",
+    "expected_answer": "Yes. The Additional Insured endorsement (E01) covers the building owner Maple Street Holdings LLC for claims arising from the named insured's operations at the leased premises.",
+    "required_sources": ["claim_CGL_006_adjuster", "endorsement_CGL_001_E01"],
     "traversal_type": "traverse_policy",
     "difficulty": "hard"
   },
   {
     "id": "Q10",
-    "question": "A vehicle owner filed a total loss claim eighteen months after purchasing a new vehicle. What was the basis for the settlement amount, and why was it different from the standard calculation?",
-    "expected_answer": "Settled at new vehicle replacement cost (same make and model) rather than actual cash value, because the New Car Replacement endorsement applies within 24 months of original purchase.",
-    "required_sources": [
-      "claim_PAP_006_adjuster",
-      "endorsement_PAP_001_E02"
-    ],
+    "question": "David Chen filed a total loss claim (claim_PAP_006) eighteen months after purchasing his vehicle. What was the basis for the settlement and why was it different from the standard actual cash value calculation?",
+    "expected_answer": "Settled at new vehicle replacement cost rather than actual cash value because the New Car Replacement endorsement (E02) applies within 24 months of original purchase.",
+    "required_sources": ["claim_PAP_006_adjuster", "endorsement_PAP_001_E02"],
     "traversal_type": "traverse_policy",
     "difficulty": "hard"
   },
   {
     "id": "Q11",
-    "question": "A homeowner had a water damage claim denied in 2023. They filed a second claim for a similar pipe-related loss in 2024. What changed between the two claims that affected the coverage outcome?",
-    "expected_answer": "The policy was amended in 2024, raising the pipe age exclusion from 20 years to 25 years. The second claim was for a 22-year-old pipe, which was excluded under the original policy but covered under the amended policy.",
-    "required_sources": [
-      "claim_HO_002_outcome",
-      "claim_HO_010_adjuster",
-      "policy_HO3_001_v2_exclusions"
-    ],
+    "question": "Sarah Mitchell had a pipe-related water damage claim (claim_HO_002) denied in 2023. She filed a second pipe-related claim (claim_HO_010) in 2024 that was approved. What changed between the two claims that affected the coverage outcome?",
+    "expected_answer": "The policy was amended in 2024, raising the pipe age exclusion from 20 to 25 years. The second claim involved a 22-year-old pipe, excluded under the original but covered under the amended policy.",
+    "required_sources": ["claim_HO_002_outcome", "claim_HO_010_adjuster", "policy_HO3_001_v2_exclusions"],
     "traversal_type": "traverse_temporal",
-    "difficulty": "hard",
-    "note": "Requires temporal traversal across two claims AND policy version comparison"
+    "difficulty": "hard"
   },
   {
     "id": "Q12",
-    "question": "A policyholder had their auto claim for a theft approved. Shortly after, they filed a separate claim for hail damage. What were the deductibles that applied to each claim?",
-    "expected_answer": "Theft claim: $500 comprehensive deductible. Hail damage claim: $500 comprehensive deductible. Both fall under comprehensive coverage.",
-    "required_sources": [
-      "claim_PAP_004_outcome",
-      "claim_PAP_009_adjuster"
-    ],
+    "question": "David Chen's auto theft claim (claim_PAP_004) was approved, and he subsequently filed a hail damage claim (claim_PAP_009). What deductibles applied to each claim?",
+    "expected_answer": "Theft: $500 comprehensive deductible. Hail: $500 comprehensive deductible. Both fall under comprehensive coverage.",
+    "required_sources": ["claim_PAP_004_outcome", "claim_PAP_009_adjuster"],
     "traversal_type": "traverse_temporal",
     "difficulty": "medium"
   },
   {
     "id": "Q13",
-    "question": "A commercial bakery filed a bodily injury claim for a customer who slipped on premises, followed by a property damage claim for smoke damage to a neighboring tenant. What was the combined exposure against the policy aggregate?",
-    "expected_answer": "Bodily injury claim (claim_CGL_001): within $1M per occurrence limit. Property damage claim (claim_CGL_007): within $1M per occurrence limit. Combined exposure $2M, which equals the aggregate limit.",
-    "required_sources": [
-      "claim_CGL_001_outcome",
-      "claim_CGL_007_outcome"
-    ],
+    "question": "Golden Slice LLC filed a bodily injury claim (claim_CGL_001) and later a smoke damage claim (claim_CGL_007). What was the combined exposure against the policy aggregate limit?",
+    "expected_answer": "Bodily injury (claim_CGL_001): within $1M per-occurrence limit. Property damage (claim_CGL_007): within $1M per-occurrence limit. Combined $2M equals the aggregate limit.",
+    "required_sources": ["claim_CGL_001_outcome", "claim_CGL_007_outcome"],
     "traversal_type": "traverse_temporal",
     "difficulty": "hard"
   },
   {
     "id": "Q14",
-    "question": "Under the current version of the homeowners policy (effective January 2024), what is the pipe age threshold that triggers the water damage exclusion?",
-    "expected_answer": "25 years. The amended policy (effective 2024-01-01) raised the threshold from 20 years to 25 years.",
-    "required_sources": [
-      "policy_HO3_001_v2_exclusions"
-    ],
+    "question": "Under the amended homeowners policy (policy_HO3_001_v2) effective January 2024, what is the pipe age threshold that triggers the water damage exclusion?",
+    "expected_answer": "25 years. The amended policy raised the threshold from 20 to 25 years.",
+    "required_sources": ["policy_HO3_001_v2_exclusions"],
     "traversal_type": "supersedes",
-    "difficulty": "medium",
-    "note": "Must retrieve amended policy, not original \u2014 tests SUPERSEDES + superseded=true filter"
+    "difficulty": "medium"
   },
   {
     "id": "Q15",
-    "question": "A claim was denied in early 2023 because the damaged pipe was 22 years old. If the same loss had occurred under the policy terms in effect from January 2024 onward, would the outcome have been different?",
-    "expected_answer": "Yes. The original policy excluded pipes over 20 years, so the 22-year-old pipe was denied. The amended policy (effective 2024-01-01) raised the threshold to 25 years, so the same 22-year-old pipe would be covered.",
-    "required_sources": [
-      "policy_HO3_001_exclusions",
-      "policy_HO3_001_v2_exclusions"
-    ],
+    "question": "Sarah Mitchell's claim_HO_002 was denied in 2023 because the damaged pipe was 22 years old. If that same loss had occurred after the January 2024 policy amendment, would the outcome have been different?",
+    "expected_answer": "Yes. The original policy excluded pipes over 20 years so the 22-year-old pipe was denied. The amended policy raised the threshold to 25 years so the same pipe would be covered.",
+    "required_sources": ["policy_HO3_001_exclusions", "policy_HO3_001_v2_exclusions"],
     "traversal_type": "supersedes",
+    "difficulty": "hard"
+  },
+  {
+    "id": "Q16",
+    "question": "What is the total commercial general liability aggregate coverage across all businesses owned by James Carter?",
+    "expected_answer": "$4,000,000 total: $2,000,000 aggregate for Golden Slice LLC (policy_CGL_001) plus $2,000,000 aggregate for Premier Occasions LLC (policy_CGL_002), both owned by James Carter.",
+    "required_sources": ["policy_CGL_001_declarations", "policy_CGL_002_declarations"],
+    "traversal_type": "traverse_entity",
     "difficulty": "hard",
-    "note": "Requires comparing original and amended policy \u2014 most complex question"
+    "note": "Requires Person → Organization → Policy traversal. No document lists all Carter businesses together."
+  },
+  {
+    "id": "Q17",
+    "question": "Which other insured businesses in our portfolio operate at the same address as Golden Slice LLC (800 Industrial Avenue), and what policies cover them?",
+    "expected_answer": "Premier Occasions LLC and Maple Street Holdings LLC also operate at 800 Industrial Avenue. Premier Occasions is covered under policy_CGL_002. Maple Street Holdings is covered under policy_CGL_003.",
+    "required_sources": ["policy_CGL_001_declarations", "policy_CGL_002_declarations", "policy_CGL_003_declarations"],
+    "traversal_type": "traverse_entity",
+    "difficulty": "hard",
+    "note": "Requires Location node shared by 3 organizations. No single document names all three."
+  },
+  {
+    "id": "Q18",
+    "question": "Pull up all claims in our portfolio where FastFix Restoration was the repair contractor. How many policyholders are involved and what are the claim dates?",
+    "expected_answer": "FastFix Restoration appears in three claims across three separate policyholders: Sarah Mitchell (claim_HO_001, February 15, 2024), Golden Slice LLC (claim_CGL_007, March 1, 2024), and Premier Occasions LLC (claim_PO_001, March 20, 2024).",
+    "required_sources": ["claim_HO_001_adjuster", "claim_CGL_007_adjuster", "claim_PO_001_adjuster"],
+    "traversal_type": "traverse_entity",
+    "difficulty": "hard",
+    "note": "No single document connects these three claims. Connection exists only through Contractor node."
+  },
+  {
+    "id": "Q19",
+    "question": "Has Marcus Webb filed bodily injury claims against more than one business in our insured portfolio?",
+    "expected_answer": "Yes. Marcus Webb filed a slip-and-fall claim against Golden Slice LLC (claim_CGL_001) and a separate injury claim against Premier Occasions LLC (claim_PO_002) within the same month.",
+    "required_sources": ["claim_CGL_001_adjuster", "claim_PO_002_adjuster"],
+    "traversal_type": "traverse_entity",
+    "difficulty": "hard",
+    "note": "Requires ThirdParty node traversal. No document states Marcus Webb filed against two policyholders."
+  },
+  {
+    "id": "Q20",
+    "question": "Carlos Mendez is listed as the agent on policy_CGL_001. Does he also manage any personal policies for individuals in our portfolio?",
+    "expected_answer": "Yes. Carlos Mendez of Pacific Coast Insurance manages James Carter's personal homeowners policy (policy_HO3_002) and all three of his commercial policies: Golden Slice LLC, Premier Occasions LLC, and Maple Street Holdings LLC.",
+    "required_sources": ["policy_HO3_002_declarations", "policy_CGL_001_declarations", "policy_CGL_002_declarations", "policy_CGL_003_declarations"],
+    "traversal_type": "traverse_entity",
+    "difficulty": "hard",
+    "note": "Requires Agent → Policies traversal. James Carter as the linking individual is not stated in any single document."
+  },
+  {
+    "id": "Q21",
+    "question": "In the Golden Slice LLC delivery damage claim (claim_CGL_002), does the insurer have a right of subrogation, and against whom?",
+    "expected_answer": "Yes. The loss was caused by a driver employed by Rivera Delivery Co. The insurer paid the property damage claim and has subrogation rights to recover costs from Rivera Delivery Co under the policy's conditions section.",
+    "required_sources": ["claim_CGL_002_adjuster", "policy_CGL_001_conditions"],
+    "traversal_type": "traverse_entity",
+    "difficulty": "hard",
+    "note": "Requires crossing from claim adjuster notes to policy conditions subrogation clause."
+  },
+  {
+    "id": "Q22",
+    "question": "Could both James Carter's personal homeowners policy (policy_HO3_002) and his commercial general liability policy (policy_CGL_001) potentially respond to the same incident at his home office?",
+    "expected_answer": "Potentially. The HO-3 covers personal liability at the insured premises but excludes business pursuits. The CGL covers business operations but only at scheduled locations. A home office incident may fall in a gap — the HO-3 excludes it as a business activity and the CGL may not cover a non-scheduled location. Both policies must be reviewed for coordination.",
+    "required_sources": ["policy_HO3_002_exclusions", "policy_CGL_001_exclusions"],
+    "traversal_type": "traverse_entity",
+    "difficulty": "hard",
+    "note": "Requires reasoning across personal and business policies for the same individual."
+  },
+  {
+    "id": "Q23",
+    "question": "What is the full insurance coverage in place for all entities operating at 800 Industrial Avenue, Springfield?",
+    "expected_answer": "Three entities operate at 800 Industrial Avenue: Golden Slice LLC (CGL, $1M/$2M, policy_CGL_001), Premier Occasions LLC (CGL, $1M/$2M, policy_CGL_002), and Maple Street Holdings LLC (commercial property, $2.5M building, policy_CGL_003). All three are owned by James Carter.",
+    "required_sources": ["policy_CGL_001_declarations", "policy_CGL_002_declarations", "policy_CGL_003_declarations"],
+    "traversal_type": "traverse_entity",
+    "difficulty": "hard",
+    "note": "Requires Location → Organizations → Policies traversal. No single document lists all three."
+  },
+  {
+    "id": "Q24",
+    "question": "Premier Occasions LLC filed a kitchen fire claim (claim_PO_001) in March 2024 and a guest injury claim (claim_PO_002) in April 2024. What is the total exposure against the policy aggregate limit?",
+    "expected_answer": "The fire claim (claim_PO_001) and injury claim (claim_PO_002) are both approved within the $1M per-occurrence limit. Combined exposure reduces the $2M aggregate. Remaining aggregate depends on exact payout amounts stated in the outcome letters.",
+    "required_sources": ["claim_PO_001_outcome", "claim_PO_002_outcome", "policy_CGL_002_declarations"],
+    "traversal_type": "traverse_temporal",
+    "difficulty": "hard",
+    "note": "Requires NEXT_PERIOD traversal across PO claims plus REFERENCES_POLICY to get aggregate limit."
+  },
+  {
+    "id": "Q25",
+    "question": "FastFix Restoration appears in three claims in our portfolio within a 33-day window. Which policyholders are involved, what are the exact dates, and why is this pattern significant from a fraud detection standpoint?",
+    "expected_answer": "FastFix Restoration appears in: Sarah Mitchell claim_HO_001 (February 15, 2024), Golden Slice LLC claim_CGL_007 (March 1, 2024), and Premier Occasions LLC claim_PO_001 (March 20, 2024). Three separate policyholders using the same contractor within 33 days is a potential fraud ring indicator.",
+    "required_sources": ["claim_HO_001_adjuster", "claim_CGL_007_adjuster", "claim_PO_001_adjuster"],
+    "traversal_type": "traverse_entity",
+    "difficulty": "hard",
+    "note": "Requires Contractor node + date filtering across three unrelated policyholders. Impossible for naive RAG."
   }
 ]
