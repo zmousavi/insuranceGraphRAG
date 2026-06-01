@@ -91,17 +91,6 @@ def create_schema(driver):
                 REQUIRE n.id IS UNIQUE
             """)
 
-        # HNSW vector index on Shadow nodes — entry point for all retrieval.
-        # HNSW is Neo4j's only vector index algorithm; we still must create
-        # the index explicitly and specify dimensions and similarity function.
-        session.run("""
-            CREATE VECTOR INDEX shadow_embedding_index IF NOT EXISTS
-            FOR (s:Shadow) ON (s.embedding)
-            OPTIONS {indexConfig: {
-                `vector.dimensions`: 768,
-                `vector.similarity_function`: 'cosine'
-            }}
-        """)
     print("  Schema created.")
 
 
@@ -639,7 +628,7 @@ def main():
     load_supersedes(driver)
 
     driver.close()
-    print("\nDone. Next: python pipeline/embed.py")
+    print("\nDone. Next: python pipeline/extract_keywords.py")
 
 
 if __name__ == "__main__":
