@@ -38,3 +38,4 @@ pypdf>=3.17.0
 
 # Utils
 # hashlib is built into Python — no install needed
+faiss-cpu>=1.7.4
