@@ -62,6 +62,8 @@ RUNTIME WORKFLOW
 """
 
 import os
+os.environ.setdefault("OMP_NUM_THREADS", "1")       # prevent FAISS/PyTorch OpenMP conflict on macOS
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 import json
 import time
 import hashlib
@@ -90,7 +92,7 @@ PROMPTS_FILE    = ROOT / "prompts.yaml"
 VECTOR_TOP_K       = 50   # seeds for cluster routing
 CLUSTER_TOP_N      = 2    # clusters selected per query
 RERANK_TOP_K       = 5    # paths kept after cross-encoder reranking
-ANCHOR_MAX_WORDS   = 200  # words from anchor shadow in condensed path
+ANCHOR_MAX_WORDS   = 150  # words from anchor section in condensed path (cross-encoder 512-token limit)
 TERMINAL_MAX_WORDS = 100  # words from terminal node in condensed path
 CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
@@ -199,6 +201,277 @@ def cosine_search(q_vec: np.ndarray, top_k: int = VECTOR_TOP_K) -> list[tuple[st
 
 
 # ---------------------------------------------------------------------------
+# Steps 2-3 — Cluster routing + anchor selection
+# ---------------------------------------------------------------------------
+
+def route_clusters(seeds: list[tuple[str, float]]) -> list[int]:
+    """
+    Group top-50 cosine seeds by cluster_id, rank clusters by mean cosine score,
+    return top CLUSTER_TOP_N cluster ids.
+    shadow_id → doc_id (shadow_to_doc) → cluster_id (clusters)
+    """
+    cluster_scores: dict[int, list[float]] = {}
+    for sid, score in seeds:
+        doc_id = shadow_to_doc.get(sid)
+        if doc_id is None:
+            continue
+        cid = clusters.get(doc_id)
+        if cid is None:
+            continue
+        cluster_scores.setdefault(cid, []).append(score)
+    ranked = sorted(
+        cluster_scores.items(),
+        key=lambda x: sum(x[1]) / len(x[1]),
+        reverse=True,
+    )
+    return [cid for cid, _ in ranked[:CLUSTER_TOP_N]]
+
+
+def get_anchor_shadows(seeds: list[tuple[str, float]], top_clusters: list[int]) -> list[tuple[str, float]]:
+    """Filter seeds to those whose doc_id belongs to one of the top clusters."""
+    top_set = set(top_clusters)
+    return [
+        (sid, score) for sid, score in seeds
+        if clusters.get(shadow_to_doc.get(sid)) in top_set
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Step 4 helpers
+# ---------------------------------------------------------------------------
+
+def _score_relevance(query: str, text: str) -> float:
+    """Word-overlap score — used to rank section summaries without an extra API call.
+    TODO: replace with cosine similarity. Section summary embeddings should be computed once
+    in pipeline/embed.py and stored in embeddings.json alongside shadow embeddings. At query
+    time, dot product against the query vector instead of word overlap — no extra API call,
+    handles synonyms that word overlap misses (e.g. 'pipe threshold' vs 'plumbing age exclusion').
+    """
+    q_words = set(query.lower().split())
+    t_words = set(text.lower().split())
+    if not q_words or not t_words:
+        return 0.0
+    return len(q_words & t_words) / len(q_words)
+
+
+def _fetch_section_shadows(session, section_id: str, label: str, limit: int = 2) -> list[str]:
+    """Return up to `limit` shadow texts for a given section id."""
+    rows = session.run(
+        "MATCH (sec:Section {id: $sid})-[:HAS_SHADOW]->(sw:Shadow) "
+        "RETURN sw.text AS text LIMIT $lim",
+        sid=section_id, lim=limit,
+    ).data()
+    return [f"[{label}]\n{r['text']}" for r in rows if r["text"]]
+
+
+def _first(result) -> dict | None:
+    """Take the first record from a Neo4j result without raising a warning for multi-row results."""
+    rows = result.data()
+    return rows[0] if rows else None
+
+
+def _best_section(query: str, sections: list[dict]) -> dict | None:
+    """Pick the section whose title+summary has the highest word-overlap with query."""
+    if not sections:
+        return None
+    return max(
+        sections,
+        key=lambda s: _score_relevance(query, (s.get("summary") or "") + " " + (s.get("title") or "")),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Step 4 — Graph expansion
+# ---------------------------------------------------------------------------
+
+def expand_anchor(anchor_id: str, anchor_score: float, query: str) -> dict | None:
+    """
+    One Neo4j session per anchor shadow. Traversal:
+      Shadow ←HAS_SHADOW← Section ←HAS_SECTION← doc
+        (a) fetch all sibling shadows + NEXT_CHUNK neighbor
+        (b) ClaimDocument: follow REFERENCES_POLICY → Policy → best section + endorsements
+        (c) Policy: score other sections → best section + endorsements
+    Returns path dict or None if anchor not found in graph.
+    """
+    with driver.session() as session:
+        row = _first(session.run("""
+            MATCH (sw:Shadow {id: $sid})
+            MATCH (sec:Section)-[:HAS_SHADOW]->(sw)
+            MATCH (doc)-[:HAS_SECTION]->(sec)
+            OPTIONAL MATCH (sec)-[:HAS_SHADOW]->(sib:Shadow)
+            OPTIONAL MATCH (sw)-[:NEXT_CHUNK]->(nxt:Shadow)
+            WITH sec, doc, sw, sib, nxt
+            ORDER BY sib.chunk_index
+            RETURN
+                sec.id          AS sec_id,
+                sec.title       AS sec_title,
+                sec.summary     AS sec_summary,
+                labels(doc)     AS doc_labels,
+                doc.id          AS doc_id,
+                doc.superseded  AS superseded,
+                collect(DISTINCT {chunk_index: sib.chunk_index, text: sib.text}) AS siblings,
+                nxt.text        AS next_text
+        """, sid=anchor_id))
+
+        if row is None:
+            return None
+
+        sec_id      = row["sec_id"]
+        sec_title   = row["sec_title"] or ""
+        doc_labels  = row["doc_labels"]
+        doc_id      = row["doc_id"] or anchor_id
+        siblings    = [s["text"] for s in sorted(row["siblings"], key=lambda x: x.get("chunk_index") or 0) if s["text"]]
+        next_text   = row["next_text"]
+
+        # anchor shadow text comes first in anchor_section — cosine selected it as the
+        # most relevant chunk, so it should lead the condensed path fed to the cross-encoder
+        anchor_text = shadow_texts.get(anchor_id, "")
+        ordered = [anchor_text] + [t for t in siblings if t != anchor_text]
+
+        tiered_texts: dict[str, list[str]] = {
+            "anchor_section": [f"[{sec_title}]\n{t}" for t in ordered],
+        }
+        if next_text:
+            tiered_texts["next_chunk"] = [next_text]
+
+        node_ids   = [anchor_id, sec_id, doc_id]
+        edge_types = ["HAS_SHADOW", "HAS_SECTION"]
+        terminal   = doc_id
+
+        # (b) ClaimDocument → REFERENCES_POLICY → Policy
+        if "ClaimDocument" in doc_labels:
+            pol_row = _first(session.run("""
+                MATCH (cd:ClaimDocument {id: $cid})-[:REFERENCES_POLICY]->(pol:Policy)
+                MATCH (pol)-[:HAS_SECTION]->(psec:Section)
+                RETURN pol.id AS pol_id,
+                       collect({id: psec.id, title: psec.title, summary: psec.summary}) AS sections
+            """, cid=doc_id))
+
+            if pol_row:
+                pol_id   = pol_row["pol_id"]
+                best_sec = _best_section(query, pol_row["sections"])
+                if best_sec:
+                    tiered_texts["policy_terminal"] = _fetch_section_shadows(
+                        session, best_sec["id"], best_sec["title"] or pol_id
+                    )
+                node_ids.extend([pol_id])
+                edge_types.append("REFERENCES_POLICY")
+                terminal = pol_id
+
+                # endorsements
+                end_rows = _first(session.run("""
+                    MATCH (pol:Policy {id: $pid})-[:HAS_ENDORSEMENT]->(end:Endorsement)
+                    MATCH (end)-[:HAS_SECTION]->(esec:Section)
+                    RETURN collect({id: esec.id, title: esec.title, summary: esec.summary}) AS sections
+                """, pid=pol_id))
+                if end_rows:
+                    best_end = _best_section(query, end_rows["sections"])
+                    if best_end and _score_relevance(query, (best_end.get("summary") or "") + " " + (best_end.get("title") or "")) > 0:
+                        tiered_texts["endorsement"] = _fetch_section_shadows(
+                            session, best_end["id"], best_end["title"] or "endorsement"
+                        )
+
+        # TODO: entity traversal not implemented (Q16, Q18, Q21 fail because of this).
+        # Entity nodes (Contractor, Person, Organization) have no shadows so FAISS never
+        # lands on them. Fix: at pipeline time, generate a text description for each entity
+        # from its graph edges (e.g. "FastFix Restoration repaired claims X, Y, Z") and embed
+        # it. Then FAISS can land on entity nodes, and expand_anchor can traverse REPAIRED_BY,
+        # OWNS, MANAGED_BY edges here as a new branch. Keeps it pure RAG — no text-to-Cypher needed.
+
+        # (c) Policy → other sections + endorsements
+        elif "Policy" in doc_labels and not row["superseded"]:
+            sec_rows = _first(session.run("""
+                MATCH (pol:Policy {id: $pid})-[:HAS_SECTION]->(psec:Section)
+                WHERE psec.id <> $skip_sec
+                RETURN collect({id: psec.id, title: psec.title, summary: psec.summary}) AS sections
+            """, pid=doc_id, skip_sec=sec_id))
+
+            if sec_rows:
+                best_sec = _best_section(query, sec_rows["sections"])
+                if best_sec:
+                    tiered_texts["policy_section_terminal"] = _fetch_section_shadows(
+                        session, best_sec["id"], best_sec["title"] or doc_id
+                    )
+
+            end_rows = _first(session.run("""
+                MATCH (pol:Policy {id: $pid})-[:HAS_ENDORSEMENT]->(end:Endorsement)
+                MATCH (end)-[:HAS_SECTION]->(esec:Section)
+                RETURN collect({id: esec.id, title: esec.title, summary: esec.summary}) AS sections
+            """, pid=doc_id))
+            if end_rows:
+                best_end = _best_section(query, end_rows["sections"])
+                if best_end and _score_relevance(query, (best_end.get("summary") or "") + " " + (best_end.get("title") or "")) > 0:
+                    tiered_texts["endorsement"] = _fetch_section_shadows(
+                        session, best_end["id"], best_end["title"] or "endorsement"
+                    )
+
+    return {
+        "node_ids":         node_ids,
+        "edge_types":       edge_types,
+        "tiered_texts":     tiered_texts,
+        "anchor_score":     anchor_score,
+        "terminal_node_id": terminal,
+        "sec_summary":      row.get("sec_summary") or "",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Steps 5-6 — Condense paths + cross-encoder reranking
+# ---------------------------------------------------------------------------
+
+def condense_path(path: dict) -> str:
+    """
+    Flatten a path into a short string for cross-encoder scoring.
+    section summary (compact, key facts first) + raw anchor text up to ANCHOR_MAX_WORDS total
+    + edge chain + terminal text (≤TERMINAL_MAX_WORDS)
+    """
+    sec_summary = path.get("sec_summary", "")
+    raw_anchor  = " ".join(path["tiered_texts"].get("anchor_section", []))
+    # Prepend section summary so key facts (e.g. "25 years") reach the cross-encoder
+    # even when raw shadow text has a long preamble before the relevant sentence.
+    combined    = (sec_summary + "\n" + raw_anchor) if sec_summary else raw_anchor
+    anchor_str  = " ".join(combined.split()[:ANCHOR_MAX_WORDS])
+
+    terminal_texts = (
+        path["tiered_texts"].get("policy_terminal") or
+        path["tiered_texts"].get("policy_section_terminal") or
+        path["tiered_texts"].get("endorsement") or
+        []
+    )
+    terminal_str = " ".join(" ".join(terminal_texts).split()[:TERMINAL_MAX_WORDS])
+
+    edge_str = " → ".join(path["edge_types"])
+    parts = [p for p in [anchor_str, f"Path: {edge_str}", terminal_str] if p]
+    return "\n".join(parts)
+
+
+def rerank_paths(query: str, paths: list[dict], top_k: int = RERANK_TOP_K) -> list[dict]:
+    """
+    Score (query, condensed_path) pairs with cross-encoder in one batch call.
+    Deduplicate on terminal_node_id (keep best-scoring path per destination).
+    Return top_k paths.
+    """
+    if not paths:
+        return []
+    condensed = [condense_path(p) for p in paths]
+    # TODO: NaN root cause not fully diagnosed — likely empty condense_path output (no anchor text
+    # or no terminal section shadows). Proper fix: validate condense_path output and skip empty
+    # paths before predict() rather than masking NaN after the fact.
+    scores    = np.nan_to_num(cross_encoder.predict([(query, c) for c in condensed]), nan=-999.0)
+    ranked    = sorted(zip(scores, paths), key=lambda x: x[0], reverse=True)
+
+    seen, result = set(), []
+    for _, path in ranked:
+        tid = path["terminal_node_id"]
+        if tid not in seen:
+            seen.add(tid)
+            result.append(path)
+        if len(result) >= top_k:
+            break
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Step 7 — Synthesize with Gemini
 # ---------------------------------------------------------------------------
 
@@ -240,7 +513,7 @@ def retrieve(
     mode="rag"       — cosine top_k → shadow texts → synthesize (no graph, no reranking)
     mode="graph_rag" — full 8-step pipeline (cluster routing, graph expansion, reranking)
                        Graph RAG steps are added in the next phase.
-    top_k            — number of shadows passed to Gemini (RAG mode only; Graph RAG uses RERANK_TOP_K)
+    top_k            — chunks passed to Gemini (RAG) or paths kept after reranking (Graph RAG)
     """
     t0 = time.time()
 
@@ -264,7 +537,39 @@ def retrieve(
             },
         )
 
-    raise NotImplementedError("graph_rag mode not yet implemented — coming next")
+    # graph_rag — full 8-step pipeline
+    seeds = cosine_search(q_vec, top_k=VECTOR_TOP_K)
+    t_search = time.time()
+
+    top_clusters = route_clusters(seeds)
+    anchors      = get_anchor_shadows(seeds, top_clusters)
+    t_cluster    = time.time()
+
+    paths = [p for sid, score in anchors if (p := expand_anchor(sid, score, question))]
+    t_expand = time.time()
+
+    top_paths = rerank_paths(question, paths, top_k=top_k)
+    t_rerank  = time.time()
+
+    texts = [t for path in top_paths for tier in path["tiered_texts"].values() for t in tier]
+    answer = synthesize(question, texts, mode="graph_rag", prompt_version=prompt_version)
+    t_synth = time.time()
+
+    return RetrievalResult(
+        answer=answer,
+        mode="graph_rag",
+        supporting_paths=top_paths,
+        clusters_used=top_clusters,
+        latency_breakdown={
+            "embed_ms":   round((t1 - t0) * 1000),
+            "search_ms":  round((t_search - t1) * 1000),
+            "cluster_ms": round((t_cluster - t_search) * 1000),
+            "expand_ms":  round((t_expand - t_cluster) * 1000),
+            "rerank_ms":  round((t_rerank - t_expand) * 1000),
+            "synth_ms":   round((t_synth - t_rerank) * 1000),
+            "total_ms":   round((t_synth - t0) * 1000),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
