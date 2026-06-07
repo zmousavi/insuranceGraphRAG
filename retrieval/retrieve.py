@@ -91,7 +91,7 @@ PROMPTS_FILE    = ROOT / "prompts.yaml"
 
 VECTOR_TOP_K       = 50   # seeds for cluster routing
 CLUSTER_TOP_N      = 2    # clusters selected per query
-RERANK_TOP_K       = 5    # paths kept after cross-encoder reranking
+RERANK_TOP_K       = 7    # paths kept after cross-encoder reranking
 ANCHOR_MAX_WORDS   = 150  # words from anchor section in condensed path (cross-encoder 512-token limit)
 TERMINAL_MAX_WORDS = 100  # words from terminal node in condensed path
 CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -367,7 +367,7 @@ def expand_anchor(anchor_id: str, anchor_score: float, query: str) -> dict | Non
                     )
                 node_ids.extend([pol_id])
                 edge_types.append("REFERENCES_POLICY")
-                terminal = pol_id
+                terminal = doc_id  # dedup per claim doc, not per policy
 
                 # endorsements
                 end_rows = _first(session.run("""
