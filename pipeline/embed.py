@@ -55,6 +55,18 @@ def fetch_shadows_from_manifest() -> list[dict]:
     return shadows
 
 
+def fetch_sections_from_manifest() -> list[dict]:
+    """Read all section id + summary pairs from manifest.json."""
+    manifest = json.loads(MANIFEST_FILE.read_text())
+    sections = []
+    for doc in manifest:
+        for section in doc.get("sections", []):
+            summary = section.get("summary") or ""
+            if summary:
+                sections.append({"id": section["section_id"], "text": summary})
+    return sections
+
+
 def embed_batch(client: genai.Client, texts: list[str]) -> list[list[float]]:
     """
     Call Vertex AI text-embedding-004 for a batch of texts.
@@ -67,18 +79,13 @@ def embed_batch(client: genai.Client, texts: list[str]) -> list[list[float]]:
     return [e.values for e in response.embeddings]
 
 
-def main():
-    print("Initializing Vertex AI...")
-    client = init_gemini()
-
-    existing = load_existing_embeddings()
-    all_shadows = fetch_shadows_from_manifest()
-
-    to_embed = [s for s in all_shadows if s["id"] not in existing]
-    print(f"  {len(all_shadows)} total shadows, {len(existing)} already embedded, {len(to_embed)} to embed.")
+def embed_items(client: genai.Client, items: list[dict], existing: dict, label: str):
+    """Embed a list of {id, text} dicts, skipping already-embedded ids. Saves after every batch."""
+    to_embed = [s for s in items if s["id"] not in existing]
+    print(f"  {len(items)} total {label}, {len(existing)} already embedded, {len(to_embed)} to embed.")
 
     if not to_embed:
-        print("Nothing to do.")
+        print(f"  Nothing to do for {label}.")
         return
 
     for i in range(0, len(to_embed), BATCH_SIZE):
@@ -100,9 +107,25 @@ def main():
         for s, v in zip(batch, vectors):
             existing[s["id"]] = v
 
-        # Save after every batch so a crash mid-run doesn't lose work.
         EMBEDDINGS_FILE.write_text(json.dumps(existing))
-        print(f"  {min(i + BATCH_SIZE, len(to_embed))}/{len(to_embed)} embedded")
+        print(f"  {min(i + BATCH_SIZE, len(to_embed))}/{len(to_embed)} {label} embedded")
+
+
+def main():
+    print("Initializing Vertex AI...")
+    client = init_gemini()
+
+    existing = load_existing_embeddings()
+
+    print("\nEmbedding shadows...")
+    shadows = fetch_shadows_from_manifest()
+    embed_items(client, shadows, existing, "shadows")
+
+    print("\nEmbedding section summaries...")
+    sections = fetch_sections_from_manifest()
+    # prefix sec_ so retrieve.py can distinguish section embeddings from shadow embeddings
+    sec_items = [{"id": f"sec_{s['id']}", "text": s["text"]} for s in sections]
+    embed_items(client, sec_items, existing, "sections")
 
     print(f"\nDone. embeddings.json has {len(existing)} vectors.")
     print("Next: python pipeline/load_neo4j.py  (to write embeddings into Neo4j)")
