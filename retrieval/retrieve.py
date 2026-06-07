@@ -112,9 +112,16 @@ class RetrievalResult:
 #       load time becomes a bottleneck (e.g. multiple workers, serverless cold starts)
 # ---------------------------------------------------------------------------
 
-embeddings    = json.loads(EMBEDDINGS_FILE.read_text())   # shadow_id → 768d vector
-clusters      = json.loads(CLUSTERS_FILE.read_text())     # node_id   → cluster_id
-cross_encoder = CrossEncoder(CROSS_ENCODER_MODEL)
+_all_embeddings = json.loads(EMBEDDINGS_FILE.read_text())   # shadow_id + sec_<section_id> → 768d vector
+clusters        = json.loads(CLUSTERS_FILE.read_text())     # node_id → cluster_id
+cross_encoder   = CrossEncoder(CROSS_ENCODER_MODEL)
+
+# Split embeddings into shadows and sections by key prefix.
+# Shadows go into the FAISS index for cosine search.
+# Sections are kept as a dict for _best_section cosine scoring.
+embeddings         = {k: v for k, v in _all_embeddings.items() if not k.startswith("sec_")}
+section_embeddings = {k[4:]: np.array(v, dtype=np.float32)      # strip sec_ prefix → section_id
+                      for k, v in _all_embeddings.items() if k.startswith("sec_")}
 
 # Build FAISS index — IndexFlatIP (exact inner product search).
 # We normalize all vectors so inner product = cosine similarity.
@@ -271,7 +278,11 @@ def _first(result) -> dict | None:
 
 
 def _best_section(query: str, sections: list[dict]) -> dict | None:
-    """Pick the section whose title+summary has the highest word-overlap with query."""
+    """Pick the section whose title+summary has the highest word-overlap with query.
+    TODO: upgrade to cosine similarity using section_embeddings. Attempted but caused
+    regressions — cosine scores are too similar across sections (0.737 vs 0.743), causing
+    wrong sections to win. Needs better section summary quality or a hybrid approach.
+    """
     if not sections:
         return None
     return max(
@@ -289,7 +300,7 @@ def expand_anchor(anchor_id: str, anchor_score: float, query: str) -> dict | Non
     One Neo4j session per anchor shadow. Traversal:
       Shadow ←HAS_SHADOW← Section ←HAS_SECTION← doc
         (a) fetch all sibling shadows + NEXT_CHUNK neighbor
-        (b) ClaimDocument: follow REFERENCES_POLICY → Policy → best section + endorsements
+        (b) ClaimDocument: follow REFERENCES_POLICY → Policy (as-filed) → best section + endorsements
         (c) Policy: score other sections → best section + endorsements
     Returns path dict or None if anchor not found in graph.
     """
@@ -348,7 +359,7 @@ def expand_anchor(anchor_id: str, anchor_score: float, query: str) -> dict | Non
             """, cid=doc_id))
 
             if pol_row:
-                pol_id   = pol_row["pol_id"]
+                pol_id    = pol_row["pol_id"]
                 best_sec = _best_section(query, pol_row["sections"])
                 if best_sec:
                     tiered_texts["policy_terminal"] = _fetch_section_shadows(
@@ -379,7 +390,7 @@ def expand_anchor(anchor_id: str, anchor_score: float, query: str) -> dict | Non
         # OWNS, MANAGED_BY edges here as a new branch. Keeps it pure RAG — no text-to-Cypher needed.
 
         # (c) Policy → other sections + endorsements
-        elif "Policy" in doc_labels and not row["superseded"]:
+        elif "Policy" in doc_labels:
             sec_rows = _first(session.run("""
                 MATCH (pol:Policy {id: $pid})-[:HAS_SECTION]->(psec:Section)
                 WHERE psec.id <> $skip_sec
@@ -525,12 +536,13 @@ def retrieve(
         texts = [
             f"[{sid}]\n{shadow_texts[sid]}"
             for sid, _ in seeds
-            if sid in shadow_texts
+            if sid in shadow_texts 
         ]
         answer = synthesize(question, texts, mode="rag", prompt_version=prompt_version)
         return RetrievalResult(
             answer=answer,
             mode="rag",
+            supporting_paths=[{"shadow_id": sid, "score": round(score, 3)} for sid, score in seeds],
             latency_breakdown={
                 "embed_ms": round((t1 - t0) * 1000),
                 "total_ms": round((time.time() - t0) * 1000),
