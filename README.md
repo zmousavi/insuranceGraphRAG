@@ -2,7 +2,7 @@
 
 A production-quality Graph RAG system for the insurance domain. Answers questions that require crossing claim documents and policy documents — a task where graph traversal demonstrably outperforms flat vector search.
 
-**Live demo:** `https://insurance-graph-rag-97967676278.us-central1.run.app/docs`
+**Live demo:** `https://insurance-graph-rag-692836495576.us-central1.run.app/docs`
 
 ---
 
@@ -138,8 +138,9 @@ uvicorn api.main:app --host 0.0.0.0 --port 8080 --reload
 curl https://insurance-graph-rag-97967676278.us-central1.run.app/health
 
 # Ask a question
-curl -X POST .../query \
+curl -X POST https://insurance-graph-rag-692836495576.us-central1.run.app/query \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: insurance2026" \
   -d '{"question": "Does Sarah Mitchell have water backup coverage?", "mode": "graph_rag"}'
 ```
 

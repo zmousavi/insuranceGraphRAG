@@ -17,8 +17,10 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel, Field
+
+API_KEY = os.getenv("API_KEY", "")
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
@@ -103,13 +105,15 @@ def health():
 
 
 @app.post("/query", response_model=QueryResponse)
-def query(req: QueryRequest):
+def query(req: QueryRequest, x_api_key: str = Header(default="")):
     """
     Run the retrieval pipeline on a question.
 
     - mode=rag       — cosine top_k chunks → Gemini (no graph)
     - mode=graph_rag — cluster routing → graph expansion → cross-encoder → Gemini
     """
+    if API_KEY and x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
     if _retrieve is None:
         raise HTTPException(status_code=503, detail="Retriever not initialised")
 
