@@ -115,10 +115,21 @@ def query(req: QueryRequest):
 
     result = _retrieve(req.question, mode=req.mode, top_k=req.top_k)
 
+    slim_paths = [
+        {
+            "anchor_id":    p.get("anchor_id"),
+            "edge_chain":   " → ".join(p.get("edge_types", [])),
+            "terminal":     p.get("terminal_node_id"),
+            "score":        round(p.get("anchor_score", 0), 3),
+        }
+        for p in result.supporting_paths
+        if "anchor_id" in p
+    ]
+
     return QueryResponse(
         answer=result.answer,
         mode=result.mode,
         latency_ms=result.latency_breakdown.get("total_ms", 0),
         clusters_used=result.clusters_used,
-        supporting_paths=result.supporting_paths,
+        supporting_paths=slim_paths,
     )
