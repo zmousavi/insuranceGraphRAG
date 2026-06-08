@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+results/
+manifest/
+data_gen/demo_docs/
+PLAN.md
+Insurance-Graph-RAG-Architecture.md
