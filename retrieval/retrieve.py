@@ -528,6 +528,10 @@ def retrieve(
     """
     t0 = time.time()
 
+    if mode == "agent":
+        from retrieval.agent import retrieve_agent
+        return retrieve_agent(question)
+
     q_vec = embed_query(question)
     t1 = time.time()
 
