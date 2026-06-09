@@ -90,7 +90,7 @@ CLUSTERS_FILE   = ROOT / "manifest" / "clusters.json"
 PROMPTS_FILE    = ROOT / "prompts.yaml"
 
 VECTOR_TOP_K       = 50   # seeds for cluster routing
-CLUSTER_TOP_N      = 2    # clusters selected per query
+CLUSTER_TOP_N      = 4    # clusters selected per query
 RERANK_TOP_K       = 7    # paths kept after cross-encoder reranking
 ANCHOR_MAX_WORDS   = 150  # words from anchor section in condensed path (cross-encoder 512-token limit)
 TERMINAL_MAX_WORDS = 100  # words from terminal node in condensed path
@@ -142,6 +142,11 @@ shadow_texts: dict[str, str] = {
     for doc in _manifest
     for shadow in doc.get("shadows", [])
 }
+
+from rank_bm25 import BM25Okapi
+_bm25_ids    = list(shadow_texts.keys())
+_bm25_corpus = [shadow_texts[sid].lower().split() for sid in _bm25_ids]
+bm25_index   = BM25Okapi(_bm25_corpus)
 
 # Cluster routing: cosine_search returns shadow_ids → look up their doc_id here
 #   → look up cluster_id in clusters dict → group seeds by cluster → rank clusters.
@@ -205,6 +210,34 @@ def cosine_search(q_vec: np.ndarray, top_k: int = VECTOR_TOP_K) -> list[tuple[st
         for i, idx in enumerate(indices[0])
         if idx != -1   # FAISS returns -1 for empty slots when top_k > index size
     ]
+
+
+# ---------------------------------------------------------------------------
+# Step 2a — BM25 + cosine RRF fusion
+# ---------------------------------------------------------------------------
+
+def rrf_search(q_vec: np.ndarray, question: str, top_k: int = VECTOR_TOP_K) -> list[tuple[str, float]]:
+    """
+    Reciprocal Rank Fusion of cosine (FAISS) and BM25 keyword search over shadow texts.
+    Fixes cluster routing failures where cosine alone lands in the wrong cluster
+    (e.g. query about named entity whose docs don't semantically match the query wording).
+    RRF score = 1/(k + cosine_rank) + 1/(k + bm25_rank), k=60 standard constant.
+    """
+    k = 60
+    cosine_results = cosine_search(q_vec, top_k=top_k)
+    cosine_rank    = {sid: i for i, (sid, _) in enumerate(cosine_results)}
+
+    tokens     = question.lower().split()
+    bm25_scores = bm25_index.get_scores(tokens)
+    bm25_order  = sorted(range(len(_bm25_ids)), key=lambda i: bm25_scores[i], reverse=True)
+    bm25_rank   = {_bm25_ids[i]: rank for rank, i in enumerate(bm25_order)}
+
+    all_ids = set(cosine_rank) | set(bm25_rank)
+    fused   = {
+        sid: 1 / (k + cosine_rank.get(sid, top_k)) + 1 / (k + bm25_rank.get(sid, top_k))
+        for sid in all_ids
+    }
+    return sorted(fused.items(), key=lambda x: x[1], reverse=True)[:top_k]
 
 
 # ---------------------------------------------------------------------------
@@ -554,7 +587,7 @@ def retrieve(
         )
 
     # graph_rag — full 8-step pipeline
-    seeds = cosine_search(q_vec, top_k=VECTOR_TOP_K)
+    seeds = rrf_search(q_vec, question, top_k=VECTOR_TOP_K)
     t_search = time.time()
 
     top_clusters = route_clusters(seeds)
