@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -5,6 +6,22 @@ import streamlit as st
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
+
+
+def _download_manifest_from_gcs():
+    bucket_name = os.getenv("GCS_BUCKET")
+    if not bucket_name:
+        return
+    from google.cloud import storage
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    manifest_dir = ROOT / "manifest"
+    manifest_dir.mkdir(exist_ok=True)
+    for filename in ["manifest.json", "embeddings.json", "clusters.json"]:
+        blob = bucket.blob(f"manifest/{filename}")
+        blob.download_to_filename(manifest_dir / filename)
+
+_download_manifest_from_gcs()
 
 
 @st.cache_resource
